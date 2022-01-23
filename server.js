@@ -2,12 +2,19 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
 
+const fs = require('fs')
+const { v4: uuidv4 } = require('uuid');
+
+const mobilenet = require('@tensorflow-models/mobilenet');
+const tfjs = require('@tensorflow/tfjs-node');
+let mobilenetModel = null;
+
 const saltRounds = 10;
 
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }))
 app.use(cors());
 
 const database = {
@@ -106,6 +113,34 @@ app.put('/image', (req, res) => {
     }
 })
 
-app.listen(3001, () => {
-    console.log('Server running on port : 3001')
+// Image Classification API
+app.post('/api/classify-image', async (req, res) => {
+    try {
+        const base64String = req.body.base64StringFile
+        const base64File = base64String.split(';base64,').pop()
+        const fileType = base64String.split('/')[1].split(';')[0]
+        const fileLocation = `uploads/submissions/${uuidv4()}.${fileType}`
+
+        fs.writeFile(fileLocation, base64File, { encoding: 'base64' }, async () => {
+            console.log('Classifier triggered.')
+
+            const image = await fs.readFileSync(fileLocation)
+            const decodedImage = tfjs.node.decodeImage(image, 3)
+            const prediction = await mobilenetModel.classify(decodedImage)
+
+            res.send(prediction)
+        })
+    } catch (error) {
+        console.log(error)
+    }
+})
+
+app.listen(3001, async () => {
+    try {
+        mobilenetModel = await mobilenet.load()
+        console.log('Model successfully loaded.')
+    } catch (error) {
+        console.log('Model loading failed. Check error log for information.')
+    }
+    console.log('Server running on port : 3001');
 })
