@@ -4,13 +4,14 @@ const cors = require('cors');
 
 const fs = require('fs')
 const { v4: uuidv4 } = require('uuid');
+const request = require('request');
 
 const mobilenet = require('@tensorflow-models/mobilenet');
 const tfjs = require('@tensorflow/tfjs-node');
-let mobilenetModel = null;
 
+
+let mobilenetModel;
 const saltRounds = 10;
-
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
@@ -130,6 +131,32 @@ app.post('/api/classify-image', async (req, res) => {
 
             res.send(prediction)
         })
+    } catch (error) {
+        console.log(error)
+    }
+})
+
+var download = function (uri, filename, callback) {
+    request.head(uri, function (err, res, body) {
+        console.log('content-type:', res.headers['content-type']);
+        console.log('content-length:', res.headers['content-length']);
+        request(uri).pipe(fs.createWriteStream(filename)).on('close', callback);
+    });
+};
+
+app.post('/api/classify-url', async (req, res) => {
+    try {
+        urlArray = req.body.url.split('/');
+        const fileType = urlArray[urlArray.length - 1];
+        const fileLocation = `uploads/${fileType}`;
+        download(req.body.url, fileLocation, () => {
+            console.log('Download done')
+        })
+        const image = await fs.readFileSync(fileLocation);
+        const decodedImage = tfjs.node.decodeImage(image, 3);
+        const prediction = await mobilenetModel.classify(decodedImage);
+        console.log(prediction);
+        res.send(prediction);
     } catch (error) {
         console.log(error)
     }
