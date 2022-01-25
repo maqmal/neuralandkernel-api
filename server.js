@@ -2,15 +2,16 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
 
+const { v4: uuidv4 } = require('uuid')
+
 const fs = require('fs')
-const { v4: uuidv4 } = require('uuid');
 const request = require('request');
 
-const mobilenet = require('@tensorflow-models/mobilenet');
+require('@tensorflow/tfjs-backend-cpu');
+require('@tensorflow/tfjs-backend-webgl');
 const tfjs = require('@tensorflow/tfjs-node');
+const cocoSsd = require('@tensorflow-models/coco-ssd');
 
-
-let mobilenetModel;
 const saltRounds = 10;
 const app = express();
 
@@ -117,27 +118,27 @@ app.put('/image', (req, res) => {
 
 // Image Classification API
 app.post('/api/classify-image', async (req, res) => {
+    const model = await cocoSsd.load()
     try {
-        const base64String = req.body.base64StringFile
-        const base64File = base64String.split(';base64,').pop()
-        const fileType = base64String.split('/')[1].split(';')[0]
-        const fileLocation = `uploads/submissions/${uuidv4()}.${fileType}`
+        const base64String = req.body.base64StringFile;
+        const base64File = base64String.split(';base64,').pop();
+        const fileType = base64String.split('/')[1].split(';')[0];
+        const fileLocation = `uploads/submissions/${uuidv4()}.${fileType}`;
 
         fs.writeFile(fileLocation, base64File, { encoding: 'base64' }, async () => {
-            console.log('Classifier triggered.')
+            console.log('Classifier triggered.');
 
-            const image = await fs.readFileSync(fileLocation)
-            const decodedImage = tfjs.node.decodeImage(image, 3)
-            const prediction = await mobilenetModel.classify(decodedImage)
-
-            res.send(prediction)
-        })
+            const image = await fs.readFileSync(fileLocation);
+            const decodedImage = tfjs.node.decodeImage(image, 3);
+            const prediction = await model.detect(decodedImage);
+            res.json(prediction);
+        });
     } catch (error) {
-        console.log(error)
-    }
+        res.status(400).json("tf error")
+    };
 })
 
-var download = function (uri, filename, callback) {
+const downloadImage = function (uri, filename, callback) {
     request.head(uri, function (err, res, body) {
         console.log('content-type:', res.headers['content-type']);
         console.log('content-length:', res.headers['content-length']);
@@ -146,29 +147,22 @@ var download = function (uri, filename, callback) {
 };
 
 app.post('/api/classify-url', async (req, res) => {
-    urlArray = req.body.url.split('/');
-    const fileType = urlArray[urlArray.length - 1];
-    const fileLocation = `uploads/${fileType}`;
-    download(req.body.url, fileLocation, async() => {
-        try {
+    const model = await cocoSsd.load()
+    try {
+        const fileType = req.body.url.split('/');
+        const fileLocation = `uploads/${fileType[fileType.length-1]}`;
+        downloadImage(req.body.url, fileLocation, async () => {
+            console.log('Classifier triggered.');
             const image = await fs.readFileSync(fileLocation);
             const decodedImage = tfjs.node.decodeImage(image, 3);
-            const prediction = await mobilenetModel.classify(decodedImage);
-            console.log(prediction);
-            res.send(prediction);
-        } catch (error) {
-            console.log(error)
-        }
-    })
-
+            const prediction = await model.detect(decodedImage);
+            res.json(prediction);
+        })
+    } catch (error) {
+        res.status(400).json("tf error")
+    }
 })
 
-app.listen(3001, async () => {
-    try {
-        mobilenetModel = await mobilenet.load()
-        console.log('Model successfully loaded.')
-    } catch (error) {
-        console.log('Model loading failed. Check error log for information.')
-    }
+app.listen(3001, () => {
     console.log('Server running on port : 3001');
 })
