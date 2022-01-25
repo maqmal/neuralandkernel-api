@@ -51,38 +51,39 @@ app.get('/', (req, res) => {
 })
 
 app.post('/signin', (req, res) => {
-    // bcrypt.compare("Gibberish", "$2b$10$laxIYL4KC9.H/9LjZvGlsu25kBEy.SrPggbKDCRCWe0oisRwcRLHu", function(err, result) {
-    //     console.log("first guess", result);
-    // });
-    // bcrypt.compare("veggies", "$2b$10$laxIYL4KC9.H/9LjZvGlsu25kBEy.SrPggbKDCRCWe0oisRwcRLHu", function(err, result) {
-    //     console.log("second guess", result);
-    // });
-
-    if (req.body.email === database.users[0].email &&
-        req.body.password === database.users[0].password) {
-        res.json('success');
-    } else {
-        res.status(400).json('error logging in');
+    const { email, password } = req.body
+    let found = false;
+    database.users.forEach(loopUser => {
+        if (loopUser.email === email && loopUser.password === password) {
+            found = true;
+            return res.json(loopUser);
+        }
+    })
+    if (!found) {
+        res.status(404).json("no such user")
     }
 })
 
 app.post('/register', (req, res) => {
     const { name, email, password } = req.body;
+    if (name === '' || email === '' || password === '') {
+        res.status(400).json("error register")
+    } else {
+        database.users.push({
+            id: 125,
+            name: name,
+            email: email,
+            password: password,
+            entries: 0,
+            joined: new Date()
+        })
 
-    database.users.push({
-        id: 125,
-        name: name,
-        email: email,
-        password: password,
-        entries: 0,
-        joined: new Date()
-    })
+        bcrypt.hash(password, saltRounds, function (err, hash) {
+            console.log(hash);
+        });
 
-    bcrypt.hash(password, saltRounds, function (err, hash) {
-        console.log(hash);
-    });
-
-    res.json(database.users[database.users.length - 1]);
+        res.json(database.users[database.users.length - 1]);
+    }
 })
 
 app.get('/profile/:id', (req, res) => {
@@ -145,21 +146,21 @@ var download = function (uri, filename, callback) {
 };
 
 app.post('/api/classify-url', async (req, res) => {
-    try {
-        urlArray = req.body.url.split('/');
-        const fileType = urlArray[urlArray.length - 1];
-        const fileLocation = `uploads/${fileType}`;
-        download(req.body.url, fileLocation, () => {
-            console.log('Download done')
-        })
-        const image = await fs.readFileSync(fileLocation);
-        const decodedImage = tfjs.node.decodeImage(image, 3);
-        const prediction = await mobilenetModel.classify(decodedImage);
-        console.log(prediction);
-        res.send(prediction);
-    } catch (error) {
-        console.log(error)
-    }
+    urlArray = req.body.url.split('/');
+    const fileType = urlArray[urlArray.length - 1];
+    const fileLocation = `uploads/${fileType}`;
+    download(req.body.url, fileLocation, async() => {
+        try {
+            const image = await fs.readFileSync(fileLocation);
+            const decodedImage = tfjs.node.decodeImage(image, 3);
+            const prediction = await mobilenetModel.classify(decodedImage);
+            console.log(prediction);
+            res.send(prediction);
+        } catch (error) {
+            console.log(error)
+        }
+    })
+
 })
 
 app.listen(3001, async () => {
