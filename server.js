@@ -2,8 +2,6 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
 
-const { v4: uuidv4 } = require('uuid')
-
 const fs = require('fs')
 const request = require('request');
 
@@ -118,20 +116,27 @@ app.put('/image', (req, res) => {
 
 // Image Classification API
 app.post('/api/classify-image', async (req, res) => {
-    const model = await cocoSsd.load()
+    console.log('Model loading...');
+    const model = await cocoSsd.load();
+    console.log('Model loaded!');
     try {
         const base64String = req.body.base64StringFile;
         const base64File = base64String.split(';base64,').pop();
         const fileType = base64String.split('/')[1].split(';')[0];
-        const fileLocation = `uploads/submissions/${uuidv4()}.${fileType}`;
+        const fileLocation = `uploads/imageUpload.${fileType}`;
 
         fs.writeFile(fileLocation, base64File, { encoding: 'base64' }, async () => {
-            console.log('Classifier triggered.');
-
+            console.log('Image created!');
             const image = await fs.readFileSync(fileLocation);
             const decodedImage = tfjs.node.decodeImage(image, 3);
+            console.log('Decoded image...');
             const prediction = await model.detect(decodedImage);
-            res.json(prediction);
+            console.log('Classifier triggered!');
+            if (prediction.length === 0) {
+                res.json('No object found. Sorry :(');
+            } else {
+                res.json(prediction);
+            }
         });
     } catch (error) {
         res.status(400).json("tf error")
@@ -147,22 +152,48 @@ const downloadImage = function (uri, filename, callback) {
 };
 
 app.post('/api/classify-url', async (req, res) => {
-    const model = await cocoSsd.load()
+    console.log('Model loading...');
+    const model = await cocoSsd.load();
+    console.log('Model loaded!');
+    const magic = {
+        jpg: 'ffd8ffe0',
+        png: '89504e47',
+        gif: '47494638'
+    };
+    const options = {
+        method: 'GET',
+        url: req.body.url,
+        encoding: null // keeps the body as buffer
+    };
     try {
-        const fileType = req.body.url.split('/');
-        const fileLocation = `uploads/${fileType[fileType.length-1]}`;
-        downloadImage(req.body.url, fileLocation, async () => {
-            console.log('Classifier triggered.');
-            const image = await fs.readFileSync(fileLocation);
-            const decodedImage = tfjs.node.decodeImage(image, 3);
-            const prediction = await model.detect(decodedImage);
-            res.json(prediction);
-        })
+        request(options, async function (err, response, body) {
+            if (!err && response.statusCode == 200) {
+                var magigNumberInBody = body.toString('hex', 0, 4);
+                if (magigNumberInBody == magic.jpg ||
+                    magigNumberInBody == magic.png ||
+                    magigNumberInBody == magic.gif) {
+                    const fileLocation = `uploads/imageUrl.${magigNumberInBody}`;
+                    downloadImage(req.body.url, fileLocation, async () => {
+                        const image = await fs.readFileSync(fileLocation);
+                        const decodedImage = tfjs.node.decodeImage(image, 3);
+                        console.log('Decoded image...');
+                        const prediction = await model.detect(decodedImage);
+                        console.log('Classifier triggered!');
+                        if (prediction.length === 0) {
+                            res.json('No object found. Sorry :(');
+                        } else {
+                            res.json(prediction);
+                        }
+                    })
+                }
+            }
+        }
+        )
     } catch (error) {
         res.status(400).json("tf error")
     }
 })
 
-app.listen(3001, () => {
+app.listen(3001, async () => {
     console.log('Server running on port : 3001');
 })
