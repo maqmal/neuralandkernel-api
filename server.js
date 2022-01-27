@@ -116,9 +116,6 @@ app.put('/image', (req, res) => {
 
 // Image Classification API
 app.post('/api/classify-image', async (req, res) => {
-    console.log('Model loading...');
-    const model = await cocoSsd.load();
-    console.log('Model loaded!');
     try {
         const base64String = req.body.base64StringFile;
         const base64File = base64String.split(';base64,').pop();
@@ -152,9 +149,6 @@ const downloadImage = function (uri, filename, callback) {
 };
 
 app.post('/api/classify-url', async (req, res) => {
-    console.log('Model loading...');
-    const model = await cocoSsd.load();
-    console.log('Model loaded!');
     const magic = {
         jpg: 'ffd8ffe0',
         png: '89504e47',
@@ -195,5 +189,11 @@ app.post('/api/classify-url', async (req, res) => {
 })
 
 app.listen(3001, async () => {
+    try {
+        model = await cocoSsd.load()
+        console.log('Model successfully loaded.')
+    } catch (error) {
+        console.log('Model loading failed. Check error log for information.')
+    }
     console.log('Server running on port : 3001');
-})
+}) 
