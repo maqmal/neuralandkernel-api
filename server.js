@@ -133,7 +133,7 @@ app.post('/api/classify-image', async (req, res) => {
             const prediction = await model.detect(decodedImage);
             console.log('Classifier triggered!');
             if (prediction.length === 0) {
-                res.json('No object found. Sorry :(');
+                res.json('not found');
             } else {
                 res.json(prediction);
             }
@@ -180,7 +180,7 @@ app.post('/api/classify-url', async (req, res) => {
                         const prediction = await model.detect(decodedImage);
                         console.log('Classifier triggered!');
                         if (prediction.length === 0) {
-                            res.json('No object found. Sorry :(');
+                            res.json('not found');
                         } else {
                             res.json(prediction);
                         }
