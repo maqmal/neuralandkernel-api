@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
+const knex = require('knex')
 
 const fs = require('fs')
 const request = require('request');
@@ -10,108 +11,99 @@ require('@tensorflow/tfjs-backend-webgl');
 const tfjs = require('@tensorflow/tfjs-node');
 const cocoSsd = require('@tensorflow-models/coco-ssd');
 
-const saltRounds = 10;
+const db = knex({
+    client: 'pg',
+    connection: {
+        host: '127.0.0.1',
+        port: 5432,
+        user: 'postgres',
+        password: '123',
+        database: 'neuralandkernel'
+    }
+});
+
+const salt = 10;
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '20mb' }))
 app.use(cors());
 
-const database = {
-    users: [
-        {
-            id: 123,
-            name: 'john',
-            email: 'john@gmail.com',
-            password: 'cookies',
-            entries: 0,
-            joined: new Date()
-        },
-        {
-            id: 124,
-            name: 'sally',
-            email: 'sally@gmail.com',
-            password: 'bananas',
-            entries: 0,
-            joined: new Date()
-        }
-    ],
-    login: [
-        {
-            id: '987',
-            has: '',
-            email: 'john@gmail.com'
-        }
-    ]
-}
-
-app.get('/', (req, res) => {
-    res.send(database.users);
-})
-
 app.post('/signin', (req, res) => {
     const { email, password } = req.body
-    let found = false;
-    database.users.forEach(loopUser => {
-        if (loopUser.email === email && loopUser.password === password) {
-            found = true;
-            return res.json(loopUser);
-        }
-    })
-    if (!found) {
-        res.status(404).json("no such user")
-    }
+    db.select('email', 'hash').from('login')
+        .where('email', '=', email)
+        .then(data => {
+            const isValid = bcrypt.compareSync(password, data[0].hash)
+            if (isValid) {
+                db.select('*').from('users')
+                    .where('email', '=', email)
+                    .then(user => {
+                        res.json(user[0])
+                    })
+                    .catch(err => res.status(400).json('unable to get user'))
+            } else {
+                res.status(400).json('wrong credentials')
+            }
+        })
+        .catch(err => res.status(400).json('wrong credentials'))
 })
 
 app.post('/register', (req, res) => {
     const { name, email, password } = req.body;
+    const hash = bcrypt.hashSync(password, salt)
     if (name === '' || email === '' || password === '') {
         res.status(400).json("error register")
     } else {
-        database.users.push({
-            id: 125,
-            name: name,
-            email: email,
-            password: password,
-            entries: 0,
-            joined: new Date()
+        db.transaction(trx => {
+            trx.insert({
+                hash: hash,
+                email: email
+            })
+                .into('login')
+                .returning('email')
+                .then(loginEmail => {
+                    trx('users')
+                        .returning('*')
+                        .insert({
+                            name: name,
+                            email: loginEmail[0].email,
+                            joined: new Date()
+                        })
+                        .then(data => {
+                            res.json(data[0])
+                        })
+                })
+                .then(trx.commit)
+                .catch(trx.rollback)
         })
-
-        bcrypt.hash(password, saltRounds, function (err, hash) {
-            console.log(hash);
-        });
-
-        res.json(database.users[database.users.length - 1]);
+            .catch(err => { res.status(400).json('unable to register') })
     }
 })
 
 app.get('/profile/:id', (req, res) => {
     const { id } = req.params;
-    let found = false;
-    database.users.forEach(loopUser => {
-        if (loopUser.id === parseInt(id)) {
-            found = true;
-            return res.json(loopUser);
-        }
-    })
-    if (!found) {
-        res.status(404).json("no such user")
-    }
+    db.select('*').from('users').where({ id: id })
+        .then(data => {
+            if (data.length) {
+                res.json(data[0])
+            } else {
+                res.status(400).json('not found')
+            }
+        })
+        .catch(err => res.status(400).json('error getting user'))
 })
 
 app.put('/image', (req, res) => {
     const { id } = req.body;
-    let found = false;
-    database.users.forEach(loopUser => {
-        if (loopUser.id === parseInt(id)) {
-            found = true;
-            loopUser.entries++;
-            return res.json(loopUser.entries);
-        }
-    })
-    if (!found) {
-        res.status(404).json("no such user")
-    }
+    db('users')
+        .where('id', '=', id)
+        .increment('entries', 1)
+        .returning('entries')
+        .then(
+            data => res.json(data[0].entries)
+        )
+        .catch(err => res.status(400).json('error update entries'))
 })
 
 // Image Classification API
@@ -180,6 +172,9 @@ app.post('/api/classify-url', async (req, res) => {
                         }
                     })
                 }
+            } else {
+                console.log('error image format')
+                res.json('link error')
             }
         }
         )
